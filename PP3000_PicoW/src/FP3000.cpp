@@ -309,15 +309,27 @@ byte FP3000::MoveCycle() {
 	// If so, return OK (one cyle finished) if there was no stall detected (WARNING).
 	currentPosition = StepperMotor.getCurrentPositionInSteps();
 	if (currentPosition == homePosition && moveResult){
-		
 		if (StepperMotor.checkStall()) {
-			Warning = STEPPER_STALL;
-			Warning = STEPPER_STALL;
-			return WARNING;
+			// Sometimes autotune wasn't perfect. Also, the pump may be new and still
+			// wearing in. This will reduce the stall value once more.
+			// However, this will only be done once / after the first stall.
+			// This value will not be saved permanently (NVM)!
+
+			// Check if stall value is not too low
+			if (_stall_val >= 20) {
+				_stall_val -= 10;
+				_home_stall_val -= 5;
+
+				Warning = STALL_REDUCE;
+				return WARNING;
+			}
+			else {
+				Warning = STEPPER_STALL;
+				return WARNING;
+			}
 		}
 		else {
 			return OK;
-		
 		}
 	}
 	return BUSY;
@@ -366,12 +378,10 @@ byte FP3000::MoveCycleAccurate() {
 
 		if (StepperMotor.checkStall()) {
 			Warning = STEPPER_STALL;
-			Warning = STEPPER_STALL;
 			return WARNING;
 		}
 		else {
 			return OK;
-
 		}
 	}
 
@@ -409,15 +419,17 @@ byte FP3000::EmptyScale(){
 	// If the motor is at the standard distance, do the back and forth motion
 	if (moveResult == true) {
 		// Move back and forth - BLOCKING
-		for(int i = 0; i < 2; i++){
+		for(int i = 0; i < 3; i++){
 			delay(200);
 			StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * _dir_home);
 			StepperMotor.moveRelativeInSteps(_std_distance * 0.2 * (-1) * _dir_home);
 		}
 
+		// Move back home (doesn't need to go all the way back)
+		StepperMotor.moveRelativeInSteps(_std_distance * 0.9 * _dir_home);
+
 		// Finish and check for stall
 		if (StepperMotor.checkStall()) {
-			Warning = STEPPER_STALL;
 			Warning = STEPPER_STALL;
 			return WARNING;
 		}
@@ -549,10 +561,10 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 
 	// =====================================================================================================================================
 	// This is to automatically find and set the stall value for the motor:
-	// 1. Sets _stall_val to a reasonable value of 200 (100 for quick check).
-	// 2. Moves once away from endstop by std_distance * (factor = 1%).
-	// 3. Checks if stall occurs; if yes, decrease stall value by 1, return to start and repeat; though if _stall_val < 10 return 0 (error).
-	// 4. If no stall occurs, return to start and increase factor by 1% and repeat until factor is 100%.
+	// 1. Set _stall_val to a reasonable value of 200 (100 for quick check).
+	// 2. Move once away from endstop by std_distance * (factor = 1%).
+	// 3. Check if stall occurs; if yes, decrease stall value by 1, return to start and repeats; though if _stall_val < 10 return 0 (error).
+	// 4. If no stall occurs, return to start and increase factor by 1% and repeat until factor is 90%.
 	// 5. Finally check if stall occurs when moving away (std_distance) and back to endstop.
 	// If no stall occurs finish and return _stall_val; though if stall is true start again from beginning.
 	// NOTE, if quickCheck is true, the function will run way faster, but in some instances it may be less accurate - quickCheck = true is
@@ -570,7 +582,7 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 		_stall_val = 100;
 		factor = 0.1;
 		stepFactor = 0.05;
-		checkStep = 10;
+		checkStep = 5;
 	}
 	else {
 		// SLOW CHECK SETTINGS
@@ -590,8 +602,11 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 		stallFlag = StepperMotor.moveRelativeInSteps(_std_distance * factor * (-_dir_home));
 
 		if (stallFlag) {
-			// Reduce stall value
-			_stall_val -= checkStep;
+			//  Reduce stall value but check if stall value is too low
+			if ((_stall_val -= checkStep) <= 10) {
+				Error = STALL_CALIBRATION;
+				return ERROR;
+			}
 			// Return to start
 			StepperMotor.moveRelativeInSteps(_std_distance * factor * _dir_home);
 			// Repeat
@@ -606,52 +621,70 @@ byte FP3000::AutotuneStall(bool quickCheck, bool saveToFile) {
 				factor = stepFactor;
 				checkFlag = true;
 			}
-
 		}
 	}
-	_home_stall_val = _stall_val-2;		// Set stall value for homing (reduce by 2 just to make sure)
+	_home_stall_val = _stall_val-5;		// Set stall value for homing (reduce by 5 just to make sure)
 	_stall_val -= 10;					// Reduce stall value by a safety margin of 10
 	StepperDriver.SGTHRS(_stall_val);	// Set final stall value
 
 	// Save stall value to file
 	if (saveToFile) {
-		// Check if file system is mounted
-		if (!LittleFS.begin()) {
-			Error = FILE_SYSTEM;
+		if (!SaveStallVal(_stall_val)) {
 			return ERROR;
-		}
-
-		// Write stall value to file
-		char filename[20];
-		sprintf(filename, "/stall_%d.bin", _nvmAddress);
-		File file = LittleFS.open(filename, "w");
-
-		if (file) {
-			file.write((uint8_t*)&_stall_val, sizeof(_stall_val));
-			file.close();
-		}
-		else {
-			Error = FILE_SYSTEM;
-			return ERROR;
-		}
-
-		// Write home stall value to file
-		sprintf(filename, "/home_stall_%d.bin", _nvmAddress);
-		file = LittleFS.open(filename, "w");
-
-		if (file) {
-			file.write((uint8_t*)&_home_stall_val, sizeof(_home_stall_val));
-			file.close();
-		}
-		else {
-			Error = FILE_SYSTEM;
-			return ERROR;
-		}
-
-		LittleFS.end();
+		};
 	}
 
+	// If this the dumper drive, move it to the top positio so it doesn't block food dispensing for the pumps tuning,
+	StepperMotor.moveRelativeInSteps(_std_distance * (-1) * _dir_home);
+
+
 	return _stall_val;
+}
+
+// Save Stall Value to File
+bool FP3000::SaveStallVal(uint8_t saveVal) {
+
+	// =================================================================================================================================
+	// This is to save the stall value to a file:
+	// The function will save the stall value to a file, which can be read after a power cycle. The function will return true if the
+	// stall value was saved successfully and false if there was an error. The function will also set the stall value to the saved value.
+	// =================================================================================================================================
+	
+	// Check if file system is mounted
+	if (!LittleFS.begin()) {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	// Write stall value to file
+	char filename[20];
+	sprintf(filename, "/stall_%d.bin", _nvmAddress);
+	File file = LittleFS.open(filename, "w");
+
+	if (file) {
+		file.write((uint8_t*)&_stall_val, sizeof(_stall_val));
+		file.close();
+	}
+	else {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	// Write home stall value to file
+	sprintf(filename, "/home_stall_%d.bin", _nvmAddress);
+	file = LittleFS.open(filename, "w");
+
+	if (file) {
+		file.write((uint8_t*)&_home_stall_val, sizeof(_home_stall_val));
+		file.close();
+	}
+	else {
+		Error = FILE_SYSTEM;
+		return false;
+	}
+
+	LittleFS.end();
+	return true;
 }
 
 // Measure Food

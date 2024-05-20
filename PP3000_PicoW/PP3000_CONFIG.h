@@ -1,22 +1,15 @@
 /*
 * This is the configuration file for the PurrPleaser3000 (incl. 2x FoodPumps (+Scales) and 1x DumperDrive).
-* The configuration file is optimized for the PurrPleaser3000 Board, however setting may be changed to fit other layouts.
+* The configuration file is optimized for the PurrPleaser3000 Board, however settings may be changed to fit other layouts.
 * For different configurations, please change the settings below at "Configuration".
 */
 
 #ifndef _PP3000_CONFIG_h
 #define _PP3000_CONFIG_h
 
-// Libraries
-// --------------------------------------------------------------------------------
-#include "src/FP3000.h"
-#include <Wire.h>
-#include <Arduino_DebugUtils.h>
-// -------------------------------------------------------------------------------*
-
 // Debugging
 // --------------------------------------------------------------------------------
-	#define DEBUG_LEVEL DBG_VERBOSE
+	#define DEBUG_LEVEL DBG_NONE
 
 	/* Set desired debug level:
 	========================================================================
@@ -32,6 +25,43 @@
 
 // Configuration
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+	// NOTE: Credentials (your "secrets") are stored in the "credentials.h" file.
+	// Please update your Wifi, MQTT and NTP credentials there!
+
+	// This Purr Pleaser identifier
+	#define PP_ID		"PP3000"		// Purr Pleaser ID
+	#define PP_NAME		"Cat Feeder"	// Purr Pleaser Name (as shown at home assistant)
+	#define VERSION		"0.1.0"			// Version of the Purr Pleaser
+
+	// Cat Names
+	#define NAME_CAT_1	"Bonnie"		// Name of the first cat
+	#define NAME_CAT_2	"Maya"			// Name of the second cat
+
+	// Default Food Settings
+	#define MAX_DAILY	80				// Max daily food amount (g) - as settable by Home Assistant
+	#define MAX_SINGLE	20				// Max single food amount (g) - as settable by Home Assistant
+
+
+	// Time Zone Settings (fill in your time zone settings)
+	// (For info at: https://github.com/JChristensen/Timezone)
+	// ============================================================================================================
+	// Daylight Time (aka Summer Time)
+	#define ABV_S		CEST	// Abrevation for Summer Time (name it as you like - no standard here)
+	#define WEEK_S		Last	// Week of the month (First, Second, Third, Fourth, Last)
+	#define DOW_S		Sun		// Day of the week (Sun, Mon, Tue, Wed, Thu, Fri, Sat)
+	#define MON_S		Mar		// Month of the year (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)
+	#define HOUR_S		1		// Hour at which the time changes
+	#define UTC_S		60		// UTC offset in minutes (e.g. 0 for UTC +1)
+
+	// Standard Time (aka Winter Time)
+	#define ABV_W		CET		// Abrevation for Winter Time (name it as you like - no standard here)
+	#define WEEK_W		Last	// Week of the month (First, Second, Third, Fourth, Last)
+	#define DOW_W		Sun		// Day of the week (Sun, Mon, Tue, Wed, Thu, Fri, Sat)
+	#define MON_W		Oct		// Month of the year (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)
+	#define HOUR_W		2		// Hour at which the time changes
+	#define UTC_W		0		// UTC offset in minutes (e.g. 0 for UTC UTC ?0 )
+	// ============================================================================================================
 
 	// PurrPleaser Board Settings
 	#define MCP_ADDRESS			0x20		// Port expander address
@@ -106,25 +136,21 @@
 	#define APP_OFFSET			4.0			// Offset in g for approx. feeding (default 4g)
 	#define EMGY_CYCLES			4			// Feeding cycles in EMGY mode (no measuring etc.) (default 4)
 
+	// IR Food Sensor
+	#define SIDE_FILL			true		// Use side fill sensor (true) or not (false)
+	#define SIDE_IR_1			4			// Side fill sensor (to measure min. food level)
+	#define SIDE_IR_2			6
+	#define TOP_FILL			true		// Use top fill sensor (true) or not (false)
+	#define TOP_IR_1			3			// Top fill sensor pin (to measure max. food level)
+	#define TOP_IR_2			5
+
+	// Capacity
+	#define HIGH_CAP			1000		// Capacity of the food container (g) - top fill sensor
+	#define LOW_CAP				150			// Low capacity of the food container (g) - side fill sensor
+	// Note, in case Top and Side fill sensor are installed, HIGH_ and LOW_CAP values should be measured and set accordingly.
+
+
 // END of Configuration-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*
-
-
-// Special Variables
-// --------------------------------------------------------------------------------
-
-// FoodPump Modes
-	enum FPMode : byte {
-		IDLE,
-		FEED,
-		CALIBRATE,
-		AUTOTUNE,
-		EMGY
-	};
-// -------------------------------------------------------------------------------*
-
-
-
-
 
 
 

@@ -38,6 +38,7 @@ public:
 	byte AutotuneStall(bool quickCheck, bool saveToFile);
 	byte CheckError();
 	byte CheckWarning();
+	bool SaveStallVal(uint8_t saveVal);
 	float Measure(byte measurments);
 	byte CalibrateScale(bool serialResult);
 	void EmergencyMove(uint16_t eCurrent, byte eCycles);
@@ -103,7 +104,8 @@ private:
 		STEPPER_JAMMED,
 		SCALE_CONNECTION,
 		FILE_SYSTEM,
-		FEED_CYCLES
+		FEED_CYCLES,
+		STALL_CALIBRATION
 	}; ErrorCode Error;
 
 	enum WarningCode : byte {
@@ -111,6 +113,7 @@ private:
 		STEPPER_FREEDRIVE,
 		STEPPER_ENDSTOP,
 		STEPPER_STALL,
+		STALL_REDUCE,
 		SCALE_CALFILE,
 		STALL_CALFILE
 	}; WarningCode Warning;

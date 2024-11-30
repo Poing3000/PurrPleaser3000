@@ -4,7 +4,7 @@
 //      *               Header file for SpeedyStepper4Purr.c             *
 //      *                                                                *
 //      *                  Copyright (c) Poing3000, 2023                 *
-//	*								 *
+//  	*                               				 *
 //      *                             original                           *
 //      *               Copyright (c) S. Reifel & Co, 2014               *
 //      *                                                                *

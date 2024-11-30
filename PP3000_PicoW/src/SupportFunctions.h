@@ -19,9 +19,19 @@ void checkWifi();
 
 // Core 1:
 void ReceiveWarningsErrors_c1(FP3000& device, byte deviceNumber);
-void PopData_c1(byte& modeToSet, float& amountToFeed_1, float& amountToFeed_2);
 void Power_c1(bool power);
+
+// +++++++++++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++++++++++++++++
+// 2x CAT
+#ifdef NAME_CAT_2
+void PopData_c1(byte& modeToSet, float& amountToFeed_1, float& amountToFeed_2);
 void checkFillLevel_c1(uint16_t lastAmount, uint16_t lastAmount2);
+#else
+// 1x CAT
+void checkFillLevel_c1(uint16_t lastAmount1);
+void PopData_c1(byte& modeToSet, float& amountToFeed_1);
+#endif
+// +++++++++++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++++++++++
 
 // Shared:
 void PackPushData(uint8_t type, uint8_t device, uint16_t info);
@@ -31,7 +41,6 @@ uint16_t floatToUint16(float value);
 float uint16ToFloat(uint16_t value);
 uint16_t byteToUint16(uint8_t value);
 // ---------------------------------------------------------------------------------------------------*
-
 
 
 // SUPPORT FUNCTIONS - CORE 0:
@@ -56,15 +65,21 @@ void checkWifi() {
 // Checks if it is time to feed via PicoRTC. If it is time, the feeding command is sent to Core 1.
 void CheckTimeAndFeed_c0() {
 
+// +++++++++++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++++++++++++++++
+#ifdef NAME_CAT_2
+// IF 2x CATS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 	byte amountCat1;
 	byte amountCat2;
 	PicoRTC.TimeToFeed(amountCat1, amountCat2);
 	if (amountCat1 > 0 || amountCat2 > 0) {
 
-		// Reset warnings and errors
-		DefaultInfo_c0(false);
+		// Reset warning message
+		DefaultInfo_c0(true);
 
 		// Send feeding command to Core 1
+		// Note, priming takes a few cycles for core 1 to finish, so the second feeding
+		// command/amount will still be processed before the actual feeding begins.
 		PackPushData('F', SCALE_1, byteToUint16(amountCat1));
 		PackPushData('F', SCALE_2, byteToUint16(amountCat2));
 
@@ -72,6 +87,29 @@ void CheckTimeAndFeed_c0() {
 		DEBUG_DEBUG("Amount Cat 1: %dg", amountCat1);
 		DEBUG_DEBUG("Amount Cat 2: %dg", amountCat2);
 	}
+
+#else
+// ELSE 1x CAT ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+	byte amountCat1;
+	PicoRTC.TimeToFeed(amountCat1);
+	if (amountCat1 > 0) {
+
+		// Reset warning message
+		DefaultInfo_c0(true);
+
+		// Send feeding command to Core 1
+		// Note, priming takes a few cycles for core 1 to finish, so the second feeding
+		// command/amount will still be processed before the actual feeding begins.
+		PackPushData('F', SCALE_1, byteToUint16(amountCat1));
+
+		DEBUG_DEBUG("Feeding command sent to Core 1");
+		DEBUG_DEBUG("Amount Cat 1: %dg", amountCat1);
+	}
+
+#endif
+// +++++++++++++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++++++++
+// ----------------------------------------------------------------------------------------------------
 
 	// Update daily schedule to Home Assistant
 	reportDailySchedule_c0();
@@ -82,7 +120,12 @@ void CheckTimeAndFeed_c0() {
 // ----------------------------------------------------------------------------------------------------
 void reportDailySchedule_c0() {
 	// Note, updates should actually only be send when values actually change (see ArduinoHA.h).
-	
+
+// ----------------------------------------------------------------------------------------------------
+// +++++++++++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++++++++++++++++
+#ifdef NAME_CAT_2
+// IF 2x CATS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 	// Update Amounts
 	// ========================================================================================
 	byte amountCat1 = 0;
@@ -125,7 +168,61 @@ void reportDailySchedule_c0() {
 	HAFeedingMin3.setState(PicoRTC.schedule.feedingTimes[2].min);
 	HAFeedingMin4.setState(PicoRTC.schedule.feedingTimes[3].min);
 	// ========================================================================================
+
+	// Update Treat Amounts
+	// ========================================================================================
+	HATreatAmount1.setState(treatAmount1);
+	HATreatAmount2.setState(treatAmount2);
+	// ========================================================================================
+
+#else
+// ELSE 1x CAT ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+	// Update Amounts
+	// ========================================================================================
+	byte amountCat1 = 0;
+
+	for (int i = 0; i < 4; i++) {
+		amountCat1 += PicoRTC.schedule.feedingAmounts[i][0];
+	}
+
+	// Send total daily feeding amounts to Home Assistant
+	HAFeedingAmountCat1.setState(amountCat1);
+
+	// Send single feeding amounts to Home Assistant
+	// ======================================================================
+	// Cat 1
+	HAFeedingAmountCat1Time1.setState(PicoRTC.schedule.feedingAmounts[0][0]);
+	HAFeedingAmountCat1Time2.setState(PicoRTC.schedule.feedingAmounts[1][0]);
+	HAFeedingAmountCat1Time3.setState(PicoRTC.schedule.feedingAmounts[2][0]);
+	HAFeedingAmountCat1Time4.setState(PicoRTC.schedule.feedingAmounts[3][0]);
+	// ======================================================================
+	// ========================================================================================
+
+	// Update Times
+	// ========================================================================================
+	// Hours
+	HAFeedingHour1.setState(PicoRTC.schedule.feedingTimes[0].hour);
+	HAFeedingHour2.setState(PicoRTC.schedule.feedingTimes[1].hour);
+	HAFeedingHour3.setState(PicoRTC.schedule.feedingTimes[2].hour);
+	HAFeedingHour4.setState(PicoRTC.schedule.feedingTimes[3].hour);
+	// Minutes
+	HAFeedingMin1.setState(PicoRTC.schedule.feedingTimes[0].min);
+	HAFeedingMin2.setState(PicoRTC.schedule.feedingTimes[1].min);
+	HAFeedingMin3.setState(PicoRTC.schedule.feedingTimes[2].min);
+	HAFeedingMin4.setState(PicoRTC.schedule.feedingTimes[3].min);
+	// ========================================================================================
+
+	// Update Treat Amounts
+	// ========================================================================================
+	HATreatAmount1.setState(treatAmount1);
+	// ========================================================================================
+
+#endif
+// +++++++++++++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++++++++
+// ----------------------------------------------------------------------------------------------------
+
 }
+// ---------------------------------------------------------------------------------------------------*
 
 // Function to pop and debug data from Core 1
 // ----------------------------------------------------------------------------------------------------
@@ -135,7 +232,7 @@ void PopAndDebug_c0() {
 	// Returns true if data was popped and provides debug messages
 	// NOTE, any ERROR will trigger EMGY mode right away. Thus if 
 	// an error is detected, the device will stop working and and
-	// transit into an emergency mode (Do one EMGY dispense and
+	// transit into an emergency mode (do one EMGY dispense and
 	// then wait for further instructions).
 	// ===============================================================
 
@@ -177,7 +274,7 @@ void PopAndDebug_c0() {
 	  "Stepper sluggish",
 	  "Endstop defective",
 	  "Stall detected",
-	  "Stall detected - reduced now",
+	  "Stall reduced",
 	  "Not calibrated",
 	  "Stall value not set",
 	  "Invalid Mode Setting Received",
@@ -215,7 +312,6 @@ void PopAndDebug_c0() {
 
 	// Present error (0 = no error,  99 = no device)
 	static uint16_t presentError = 0;
-	static uint8_t errorDevice = 99;
 
 	while (dataCount--) {
 		if (rp2040.fifo.pop_nb(&data)) {
@@ -238,9 +334,17 @@ void PopAndDebug_c0() {
 				if (device == SCALE_1) {
 					HAScale1.setValue(info);
 				}
+
+// ++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++
+// IF 2x CATS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#ifdef NAME_CAT_2
 				else if (device == SCALE_2) {
 					HAScale2.setValue(info);
 				}
+#endif
+// ++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++
+// --------------------------------------------------------------------------------
+
 				break;
 			}
 			case 'C':
@@ -252,8 +356,15 @@ void PopAndDebug_c0() {
 				break;
 			case 'W':
 				DEBUG_WARNING("WARNING Device %d: %s", device, WARNING_MESSAGES[info]);
+				// Check if info is a stall / stall reduced warning, if check if stall warnings are allowed
+				if (info == 3 || info == 4) {
+					if (allowStallWarnings(2) == 0) {
+						break;
+					}
+				}
+				// Send warning message to Home Assistant
 				HAInfo.setValue(WARNING_MESSAGES[info]);
-				DefaultInfo_c0(false); // Stop default info messages.
+				defaultInfo = false;
 				break;
 			case '0':
 			case '1':
@@ -269,13 +380,13 @@ void PopAndDebug_c0() {
 				// Error Messages
 				DEBUG_ERROR("ERROR Device %d: %s", device, ERROR_MESSAGES[info]);
 				HAInfo.setValue(ERROR_MESSAGES[info]);
+				defaultInfo = false;
 				DefaultInfo_c0(false); // Stop default info messages.
 				presentError = info;
-				errorDevice = device;
 				break;
 			}
 			
-			// At start-up, send default info message
+			// At start-up, send default info message (if no error / warning is present)
 			if (defaultInfo && type == 'S') {
 				DefaultInfo_c0(true);
 				defaultInfo = false;
@@ -285,7 +396,6 @@ void PopAndDebug_c0() {
 			if (type == 'C' || type == 'W' || type == 'E') {
 				if (presentError != 0) {
 					HAInfo.setValue(ERROR_MESSAGES[info]);
-					DefaultInfo_c0(false);
 				}
 			}
 		}
@@ -300,17 +410,37 @@ void PopAndDebug_c0() {
 // ----------------------------------------------------------------------------------------------------
 // Function to send the default info message to Home Assistant
 void DefaultInfo_c0(bool noError) {
-	// Only reset info message if no error is detected (if wanted).
-	static bool lockError = false;
-	if(!noError) lockError = true;
-	if (!lockError) {
-		HAInfo.setValue("OK");
-	}
+    // Only reset info message if no error is detected. So, if an error is detected, the info message
+	// is locked to the error message (until reset).
+    static bool lockError = false;
+    if (!noError) {
+        lockError = true;
+    } else if (!lockError) {
+        HAInfo.setValue("OK");
+    }
 }
 // ---------------------------------------------------------------------------------------------------*
+
+// Check Stall Info
+// ----------------------------------------------------------------------------------------------------
+// Function to check whether stall warnings should be sent to Home Assistant
+bool allowStallWarnings(byte allow) {
+	// Allow stall warnings
+	// 0 = no stall warnings
+	// 1 = stall warnings
+	// 2 = return info
+
+	static byte allowStall = 0; // Default is to disable stall warnings
+
+	if (allow == 0 || allow == 1) {
+		allowStall = allow;
+	}
+	
+	return allowStall;
+}
+
 // END OF SUPPORT FUNCTIONS - CORE 0 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 
 
 // SUPPORT FUNCTIONS - CORE 1:
@@ -320,13 +450,13 @@ void DefaultInfo_c0(bool noError) {
 void ReceiveWarningsErrors_c1(FP3000& device, byte deviceNumber) {
 
     // Check Warnings
-    uint16_t info_W = device.CheckWarning();
+    uint16_t info_W = device.CheckWarning();		// (FP3000)
     if (info_W != 0) {
         PackPushData('W', deviceNumber, info_W);
     }
 
     // Check Errors
-    uint16_t info_E = device.CheckError();
+    uint16_t info_E = device.CheckError();			// (FP3000)
     if (info_E != 0) {
         PackPushData('E', deviceNumber, info_E);
     }
@@ -335,6 +465,10 @@ void ReceiveWarningsErrors_c1(FP3000& device, byte deviceNumber) {
 
 // Function to pop data from Core 0
 // ----------------------------------------------------------------------------------------------------
+
+// +++++++++++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++++++++++++++++
+#ifdef NAME_CAT_2
+// IF 2x CATS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 void PopData_c1(byte& modeToSet, float& amountToFeed_1, float& amountToFeed_2) {
 
 	char type;
@@ -387,6 +521,60 @@ void PopData_c1(byte& modeToSet, float& amountToFeed_1, float& amountToFeed_2) {
 		PackPushData('E', 99, 7);
 	}
 }
+#else
+// ELSE 1x CAT ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+void PopData_c1(byte& modeToSet, float& amountToFeed_1) {
+
+	char type;
+	uint8_t device;
+	uint16_t info;
+	uint32_t data;
+	bool recError = false;
+
+	// Check if data is available
+	int dataCount = rp2040.fifo.available();
+
+	for (int i = 0; i < dataCount; i++) {
+		if (rp2040.fifo.pop_nb(&data)) {
+
+			// Unpack data from FIFO
+			unpackData(data, type, device, info);
+
+			// Receive commands from Core 0
+			if (type == 'M') {	// Reveice mode
+				modeToSet = static_cast<byte>(info);
+			}
+			else if (type == 'F') {
+				modeToSet = FEED;
+
+				if (device == SCALE_1) {
+					amountToFeed_1 = uint16ToFloat(info);
+				}
+				else {
+					// Unexpected data (FIFO error)
+					recError = true;
+				}
+			}
+			else {
+				// Unexpected data (FIFO error)
+				recError = true;
+			}
+		}
+		else {
+			// Unexpected FIFO error
+			recError = true;
+		}
+	}
+
+	if (recError) {
+		// This is for an unexpected error.
+		// 99 - only a placeholder, 7 - FIFO error
+		PackPushData('E', 99, 7);
+	}
+}
+#endif
+// +++++++++++++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++++++++
+// ----------------------------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------------------*
 
 // Power On/Off unused devices
@@ -399,11 +587,18 @@ void Power_c1(bool power) {
 	if (power != prevPower) {
 		if (power) {
 			digitalWrite(DRIVER_ENABLE, LOW);	// Enable Driver
-			digitalWrite(VV_EN, HIGH);			// Enable 5V
+
+			if(VV_EN != 99) {					// Check if 5V pin is used
+				digitalWrite(VV_EN, HIGH);		// Enable 5V
+			}
+			delay(1000);						// Settle time for driver / motor start.
 		}
 		else {
 			digitalWrite(DRIVER_ENABLE, HIGH);	// Disable Driver
-			digitalWrite(VV_EN, LOW);			// Disable 5V
+
+			if (VV_EN != 99) {					// Check if 5V pin is used
+				digitalWrite(VV_EN, LOW);			// Disable 5V
+			}
 		}
 		prevPower = power;
 	}
@@ -475,26 +670,30 @@ uint16_t byteToUint16(uint8_t value) {
 	return uValue;
 }
 
-// Report fill level - TODO MOVE THE TO CORE 0!!!
+// Report fill level
 // ----------------------------------------------------------------------------------------------------
 // Function that uses the Side Fill Sensor to report when the food is running low and if available,
 // reports a very approximate fill level.
+
+// +++++++++++++++++++++++++++ DIFFERENTIATE BETWEEN 1x AND 2x CATS +++++++++++++++++++++++++++++++++++
+#ifdef NAME_CAT_2
+// IF 2x CATS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 void checkFillLevel_c1(uint16_t lastAmount1, uint16_t lastAmount2) {
 	
 	static bool lowLevel = false;
 	static bool lastState = false;
-	static uint16_t feedingSinceTop = 1000;
+	static uint16_t feedingSinceTop = HIGH_CAP;
 
 	// Side Fill Sensor
 	// ========================================================================================
 	// In case a side fill sensor is available, this function only reports when food is low.
 	if (SIDE_FILL) {
 		if (mcp.getPin(SIDE_IR_1, A) || mcp.getPin(SIDE_IR_2, A)) {
-			PackPushData('W', 99, 7);
+			PackPushData('W', 99, 8);	// 8 = Refill food (99 = no specific device)
 			lowLevel = true;
 		}
 		else if (lowLevel) {
-			PackPushData('W', 99, 0);
+			PackPushData('W', 99, 0);	// 0 = OK
 			lowLevel = false;
 		}
 	}
@@ -523,7 +722,7 @@ void checkFillLevel_c1(uint16_t lastAmount1, uint16_t lastAmount2) {
 
 		if (lowLevel) {
 			remainingDays = LOW_CAP / maxPerDay;
-			PackPushData('2', 0, remainingDays);
+			PackPushData('2', 0, remainingDays);	// '2' = Message type: "Warning! < "
 		}
 		else if (mcp.getPin(TOP_IR_1, A) || mcp.getPin(TOP_IR_2, A)) {
 			if (lastState) {
@@ -535,16 +734,86 @@ void checkFillLevel_c1(uint16_t lastAmount1, uint16_t lastAmount2) {
 				feedingSinceTop += (lastAmount1 > lastAmount2) ? lastAmount1 : lastAmount2;
 				remainingDays = (feedingSinceTop >= HIGH_CAP) ? LOW_CAP / maxPerDay : (HIGH_CAP - feedingSinceTop) / maxPerDay;
 			}
-			PackPushData('1', 0, remainingDays);
+			PackPushData('1', 0, remainingDays);	// '1' = Message type: "~ "
 		}
 		else {
 			lastState = true;
 			remainingDays = HIGH_CAP / maxPerDay;
-			PackPushData('0', 0, remainingDays);
+			PackPushData('0', 0, remainingDays);	// '0' = Message type: "> "
 		}
 	}
 	// ========================================================================================
 }
+#else
+// ELSE 1x CAT ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+void checkFillLevel_c1(uint16_t lastAmount1) {
+
+	static bool lowLevel = false;
+	static bool lastState = false;
+	static uint16_t feedingSinceTop = HIGH_CAP;
+
+	// Side Fill Sensor
+	// ========================================================================================
+	// In case a side fill sensor is available, this function only reports when food is low.
+	if (SIDE_FILL) {
+		bool readLowLevel = EXPANDER ? mcp.getPin(SIDE_IR_1, A) : digitalRead(SIDE_IR_1);
+		if (readLowLevel && !lowLevel) {
+			PackPushData('W', 99, 8);  // 8 = Refill food (99 = no specific device)
+			lowLevel = true;
+		}
+		else if (!readLowLevel && lowLevel) {
+			PackPushData('W', 99, 0);  // 0 = OK
+			lowLevel = false;
+		}
+	}
+	// ========================================================================================
+
+	// Top Sensor
+	// ========================================================================================
+	// This function approximates the fill level based on the top and side sensor readings
+	// (when available). When the top sensor reads full, then the max. remaining feedeings are
+	// approximated with the HIGH_CAP value (e.g. capacity = 1000g, daily feeding = 100g, then
+	// ">10" days are left). When the top sensor switches from full to not full, then remaining
+	// feedinngs are estimated by subtracting the current weight from the HIGH_CAP value. Then,
+	// if this substraction shows 0, the the remaining feedings will show the min. value,
+	// calculated with the LOW_CAP figure (e.g. "<1 day" left). This is a very rough estimation
+	// and should be used with caution. Note, sensor signals are inverted.
+
+	if (SIDE_FILL && TOP_FILL) {
+		uint16_t remainingDays = 0;
+		uint16_t amountCat1 = 0;
+		for (int i = 0; i < 4; i++) {
+			amountCat1 += PicoRTC.schedule.feedingAmounts[i][0];
+		}
+
+		bool readHighLevel = EXPANDER ? mcp.getPin(TOP_IR_1, A) : digitalRead(TOP_IR_1);
+		if (lowLevel) {
+			remainingDays = LOW_CAP / amountCat1;
+			PackPushData('2', 0, remainingDays);	// '2' = Message type: "Warning! < "
+		}
+		else if (readHighLevel) {
+			if (lastState) {
+				lastState = false;
+				feedingSinceTop = 0;
+				remainingDays = HIGH_CAP / amountCat1;
+			}
+			else {
+				feedingSinceTop += lastAmount1;
+				remainingDays = (feedingSinceTop >= HIGH_CAP) ? LOW_CAP / amountCat1 : (HIGH_CAP - feedingSinceTop) / amountCat1;
+			}
+			PackPushData('1', 0, remainingDays);	// '1' = Message type: "~ "
+		}
+		else {
+			lastState = true;
+			remainingDays = HIGH_CAP / amountCat1;
+			PackPushData('0', 0, remainingDays);	// '0' = Message type: "> "
+		}
+	}
+	// ========================================================================================
+}
+#endif
+// +++++++++++++++++++++++++ END OF DIFFERENTIATE BETWEEN 1x AND 2x CATS ++++++++++++++++++++++++++++++
+// ----------------------------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------------------*
 // END OF SUPPORT FUNCTIONS - SHARED ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -1,23 +1,35 @@
 ﻿/*
  * Name:	PurrPLeaser3000
  * Author:	Poing3000
- * Status:	Dev
+ * Status:	Beta
  *
  * Description:
  * This code is for the PurrPleaser3000.
  * It is built for a Raspberry Pico W and a TMC2209 stepper driver.
  * Further info at: https://github.com/Poing3000/PurrPleaser3000
+ * 
+ * NOTE: Allow Flash to be used for LittleFS in the Arduino IDE settings (Tools -> Flash Size -> FS: 64kb)!
  *
- * Updates:
- * [x] - Implement FP3000
- * [ ] - Implement HMI
- *		[x] - Implement MQTT to Home Assistant
- *		[ ] - WebInterface
- * [ ] - Implement all libraries locally (good?).
+ * EXTERNAL DEPENDENCIES:
+ * ---------------------------------------------------------------------------------------------------
+ * Please install the following libraries via the Arduino Library Manager:
+ *	NAME					LINK														VERSION TESTED
+ *  TimeZone.h            - https://github.com/JChristensen/Timezone					1.2.4
+ *  ArduinoHA.h           - https://github.com/dawidchyrzynski/arduino-home-assistant	2.1.0
+ *  Arduino_DebugUtils.h  - https://github.com/arduino-libraries/Arduino_DebugUtils		1.4.0
+ *  MCP23017.h            - https://github.com/wollewald/MCP23017_WE/tree/master		1.6.8
+ *  TMCStepper.h          - https://github.com/teemuatlut/TMCStepper					0.7.3
+ *	HX711.h               -	https://github.com/RobTillaart/HX711						0.5.2
+ * ---------------------------------------------------------------------------------------------------
+ * 
  */
 
 // CONFIGURATION:
+// ----------------------------------------------------------
 // Please find all configuration in the PP3000_CONFIG.h file.
+// The following code should not need any changes.
+// Any settings should be done in the configuration file.
+// ---------------------------------------------------------*
 
 // LIBRARIES:
 // ----------------------------------------------------------
@@ -46,15 +58,15 @@ MCP23017 mcp = MCP23017(MCP_ADDRESS);
 
 // Dumper Drive
 FP3000 DumperDrive(MOTOR_0, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_0, SPEED, STALL_VALUE,
-		HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
+		AUTO_STALL_RED, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_0, mcp, EXPANDER, MCP_INTA);
 
 // Pump 1
 FP3000 Pump_1(MOTOR_1, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_1, SPEED, STALL_VALUE,
-		HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
+		AUTO_STALL_RED, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_1, mcp, EXPANDER, MCP_INTA);
 
 // Pump 2
 FP3000 Pump_2(MOTOR_2, STD_FEED_DIST, PUMP_MAX_RANGE, DIR_TO_HOME_2, SPEED, STALL_VALUE,
-		HOME_STALL_VALUE, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_2, mcp, EXPANDER, MCP_INTA);
+		AUTO_STALL_RED, SERIAL_PORT_1, R_SENSE, DRIVER_ADDRESS_2, mcp, EXPANDER, MCP_INTA);
 // -------------------------------------------------------------------------------------------*
 
 // SET TIMEZONE:
@@ -82,6 +94,10 @@ enum FPMode : byte {
 // The mode is set by Core 0. Default is IDLE.
 byte Mode_c1 = IDLE;
 
+// Treat Amounts (can also be used to trigger manual feeding with a specific amount)
+float treatAmount1 = TREAT_AMT;
+float treatAmount2 = TREAT_AMT;
+
 // ===========================================================================================*
 
 // Special Functions
@@ -93,6 +109,13 @@ byte Mode_c1 = IDLE;
 #include "src/SupportFunctions.h"
 
 // -------------------------------------------------------------------------------------------*
+
+// PHYLOSOHPY:
+// --------------------------------------------------------------------------------------------
+// This code uses the two cores of the Raspberry Pico W.
+// Core 0 is used for communication, scheduling, and handling the WiFi and MQTT connections.
+// Core 1 is used for driving hardware and reading the sensors.
+// --------------------------------------------------------------------------------------------*
 
 // SETUP - CORE 0:
 // --------------------------------------------------------------------------------------------
@@ -114,7 +137,7 @@ void setup() {
 
 	// Setup Communication
 	DEBUG_DEBUG("Setting up Communication");
-	setupCommunication_c0();
+	setupCommunication_c0();			// (Communication)
 
 	// Setup Core 0 finished, allow Core 1 to start
 	DEBUG_DEBUG("Core 0 setup finished, next Core 1.");
@@ -137,11 +160,6 @@ void setup1() {
 		WARNING
 	};
 
-	// Variables
-	uint8_t type = 'S';								// S = Status, by default
-	uint8_t device = 99;							// 99 = no device, just a placeholder
-	uint16_t info = OK;								// OK = no problem, by default
-
 	// Wait for Core 0 to finish setup
 	while (rp2040.fifo.pop() != OK);
 
@@ -159,6 +177,10 @@ void setup1() {
 	SERIAL_PORT_1.begin(115200);
 
 	// Setup Expander
+	uint8_t type = 'S';								// S = Status, by default
+	uint8_t device = 99;							// 99 = no device, just a placeholder
+	uint16_t info = OK;								// OK = no problem, by default
+
 	Wire.setSCL(SLC_PIN);
 	Wire.setSDA(SDA_PIN);
 	Wire.begin();
@@ -166,7 +188,7 @@ void setup1() {
 		type = 'E';
 		device = 10;								// MCP23017 (device 10)
 		info = 8;									// MCP Error (8)
-		PackPushData(type, device, info);
+		PackPushData(type, device, info);			// (Support Function)
 	}
 	mcp.setPortMode(0b10000000, A);					// set GPA IN-/OUTPUTS (GPA/B 7 needs to be OUTPUT))
 	mcp.setPortMode(0b11000011, B);					// set GPB IN-/OUTPUTS
@@ -181,31 +203,31 @@ void setup1() {
 	// Setup Motor 0
 	setupResult = DumperDrive.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_0, DIR_0, LIMIT_0, DIAG_0, ACCEL);
 	if (setupResult != OK) {
-		ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);
+		ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);			// (Support Function)
 	}
 
 	// Setup Motor 1
 	setupResult = Pump_1.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_1, DIR_1, LIMIT_1, DIAG_1, ACCEL);
 	if (setupResult != OK) {
-		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);				// (Support Function)
 	}
 
 	// Setup Scale 1
 	setupResult = Pump_1.SetupScale(SCALE_NVM_1, DATA_PIN_1, CLOCK_PIN_1);
 	if (setupResult != OK) {
-		ReceiveWarningsErrors_c1(Pump_1, SCALE_1);
+		ReceiveWarningsErrors_c1(Pump_1, SCALE_1);				// (Support Function)
 	}
 
 	// Setup Motor 2
 	setupResult = Pump_2.SetupMotor(CURRENT, MIRCO_STEPS, TCOOLS, STEP_2, DIR_2, LIMIT_2, DIAG_2, ACCEL);
 	if (setupResult != OK) {
-		ReceiveWarningsErrors_c1(Pump_2, MOTOR_2);
+		ReceiveWarningsErrors_c1(Pump_2, MOTOR_2);				// (Support Function)
 	}
 
 	// Setup Scale 2
 	setupResult = Pump_2.SetupScale(SCALE_NVM_2, DATA_PIN_2, CLOCK_PIN_2);
 	if (setupResult != OK) {
-		ReceiveWarningsErrors_c1(Pump_2, SCALE_2);
+		ReceiveWarningsErrors_c1(Pump_2, SCALE_2);				// (Support Function)
 	}
 
 	// Setup finished
@@ -220,18 +242,26 @@ void setup1() {
 	// CORE 0
 void loop() {
 
-	// Note there is an example serial user interface at the far bottom of this file;
-	// uncomment for testing etc:
+	// ===============================================================
+	// This is the main loop for Core 0. It is used to handle the
+	// communication between Core 0 and Core 1, as well as to check
+	// the feeding schedule and send feeding commands to Core 1.
+	// Further, it is used to handle the WiFi and MQTT connections.
+	// ===============================================================
+
+	// EXAMPLE CODE:
+	// There is an example serial user interface at the far bottom of this file,
+	// uncomment (also code at the bottom) for testing etc:
 	//exampleSerialInterface();
 
 	// Check for data from Core 1
-	PopAndDebug_c0();
+	PopAndDebug_c0();			// (Support Function)
 
 	// Check if it is time to feed, if send feeding command to Core 1
-	CheckTimeAndFeed_c0();
+	CheckTimeAndFeed_c0();		// (Support Function)
 
 	// Check WiFi
-	checkWifi();
+	checkWifi();				// (Support Function)
 
 	// Handle MQTT
 	mqtt.loop();
@@ -243,7 +273,7 @@ void loop() {
 void loop1() {
 
 	// Variables
-	// ----------------------------------------------------------------------------------------------------
+	// --------------------------------------------------------------------------------------------------------
 
 	// Syntax for function returns
 	enum ReturnCode : byte {
@@ -286,26 +316,26 @@ void loop1() {
 	// Feeding Cycles (checks for empty scale)
 	static byte feedCycles = 0;
 
-	// ---------------------------------------------------------------------------------------------------*
+	// -------------------------------------------------------------------------------------------------------*
 
 	// Operation Mode Settings
-	// ----------------------------------------------------------------------------------------------------
+	// --------------------------------------------------------------------------------------------------------
 
 	// Set Mode (and if available feeding amount) - from Core 0
-	PopData_c1(Mode_c1, feedingAmount_1, feedingAmount_2);
+	PopData_c1(Mode_c1, feedingAmount_1, feedingAmount_2);	// (Support Function)
 
 	// Check if Mode_c1 is in its allowed range and send to Core 0 if changed.
-	static byte oldMode_c1 = 99;					// force sending at start (e.g. after reset)
+	static byte oldMode_c1 = 99;							// force sending at start (e.g. after reset)
 	if (Mode_c1 > EMGY) {
 		// Unexpected Mode set, go to IDLE
-		PackPushData('W', 99, 6);					// 99 - no device, 6 - invalid mode)
+		PackPushData('W', 99, 7);							// 99 - no device, 6 - invalid mode (Support Function)
 		Mode_c1 = IDLE;
 	}
 	else if (Mode_c1 != oldMode_c1) {
-		PackPushData('S', 99, Mode_c1);
+		PackPushData('S', 99, Mode_c1);						// 99 - no device (Support Function)
 		oldMode_c1 = Mode_c1;
 	}
-	// ---------------------------------------------------------------------------------------------------*
+	// -------------------------------------------------------------------------------------------------------*
 
 
 	// MAIN OPERATING MODES - CORE 1
@@ -320,7 +350,7 @@ void loop1() {
 		// ===============================================================
 
 		// Power Off unused devices
-		Power_c1(false);			// Toggle e.g. for setting IR Sensors 
+		Power_c1(false);							// Toggle e.g. for setting IR Sensors (Support Function)
 
 		// Reset Feed Mode
 		feedMode = PRIME;							// Reset feeding mode
@@ -353,13 +383,13 @@ void loop1() {
 
 		case PRIME:
 			// Turn on secondary power
-			Power_c1(true);
+			Power_c1(true);													// (Support Function)
 
 			// Prime Dumper Drive
 			if (dumperReturn == BUSY) {
 				dumperReturn = DumperDrive.Prime();
 				if (dumperReturn == ERROR || dumperReturn == WARNING) {
-					ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);
+					ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);			// (Support Function)
 				}
 			}
 
@@ -367,7 +397,7 @@ void loop1() {
 			else if (pump1Return == BUSY) {
 				pump1Return = Pump_1.Prime();
 				if (pump1Return == ERROR || pump1Return == WARNING) {
-					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);				// (Support Function)
 				}
 			}
 
@@ -375,7 +405,7 @@ void loop1() {
 			else if (pump2Return == BUSY) {
 				pump2Return = Pump_2.Prime();
 				if (pump2Return == ERROR || pump2Return == WARNING) {
-					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);				// (Support Function)	
 				}
 			}
 
@@ -389,16 +419,16 @@ void loop1() {
 				// Correct feeding amount by past offset (when too much or too little food was dispensed last time)
 				// Note, correction will be neglected if that leads to a feeding <= 1g or > MAX_SINGLE (see config).
 				float newFA = feedingAmount_1 + feedingCorrection_1;
-				if(newFA + APP_OFFSET > 1 && newFA + APP_OFFSET <= MAX_SINGLE) {
+				if(newFA > 1 && newFA <= MAX_SINGLE) {
 					feedingAmount_1 = newFA;
 				}
 				newFA = feedingAmount_2 + feedingCorrection_2;
-				if (newFA + APP_OFFSET > 1 && newFA + APP_OFFSET <= MAX_SINGLE) {
+				if (newFA > 1 && newFA <= MAX_SINGLE) {
 					feedingAmount_2 = newFA;
 				}
 
-				// Pump 1 - check feed amount
-				if (Pump_1.Measure(3) >= feedingAmount_1 - APP_OFFSET) {
+				// Pump 1 - check amount to decide if approx. feeding is needed
+				if (feedingAmount_1 <= APP_OFFSET) {
 					// Approx. amount allready  reached, skip app. feeding.
 					pump1Return = OK;
 				}
@@ -406,8 +436,8 @@ void loop1() {
 					pump1Return = BUSY;
 				}
 
-				// Pump 1  - check feed amount
-				if (Pump_2.Measure(3) >= feedingAmount_2 - APP_OFFSET) {
+				// Pump 2  - check amount to decide if approx. feeding is needed
+				if (feedingAmount_2 <= APP_OFFSET) {
 					// Approx. amount allready  reached, skipp app feeding.
 					pump2Return = OK;
 				}
@@ -456,8 +486,26 @@ void loop1() {
 			if (pump1Return == OK && pump2Return == OK) {
 				// Reset feed cycles, flags and go to accurate feeding.
 				feedCycles = 0;
-				pump1Return = BUSY;
-				pump2Return = BUSY;
+
+				// Check if feeding amount is allready reached, then skip accurate feeding.
+				// (Also, if feeding amount is set to 0.)
+				if(Pump_1.Measure(5) >= feedingAmount_1 || feedingAmount_1 == 0) {
+					pump1Return = OK;
+				}
+				else {
+					// Amount not yet reached, Pump still busy / ready for accurate feeding.
+					pump1Return = BUSY;
+				}
+
+				if (Pump_2.Measure(5) >= feedingAmount_2 || feedingAmount_2 == 0) {
+					pump2Return = OK;
+				}
+				else {
+					// Amount not yet reached, Pump still busy / ready for accurate feeding.
+					pump2Return = BUSY;
+				}	
+				
+				// Go to accurate feeding (will skip the actual steps if feeding amount is reached)
 				feedMode = ACCURATE;
 			}
 
@@ -466,7 +514,7 @@ void loop1() {
 				feedCycles = 0; // Reset feed cycles
 				// Switch to emergency feeding, since approx.
 				// amount is not reached after 10 cycles.
-				PackPushData('E', 99, 6); // 99 - no device, 6 - Empty or scale broken
+				PackPushData('E', 99, 6); // 99 - no device, 6 - Empty or scale broken (Support Function)
 				Mode_c1 = EMGY;
 			}
 			break;
@@ -518,7 +566,7 @@ void loop1() {
 			if (feedCycles >= 100) {
 				feedCycles = 0; // Reset feed cycles
 				// Switch to emergency feeding.
-				PackPushData('E', 99, 6); // 99 - no device, 6 - Empty or scale broken
+				PackPushData('E', 99, 6); // 99 - no device, 6 - Empty or scale broken (Support Function)
 				Mode_c1 = EMGY;
 			}
 
@@ -536,7 +584,7 @@ void loop1() {
 					// Do Final Measurement and send data to Core 0
 					lastFed_1 = Pump_1.Measure(7);
 					// (Uses floatToUint16 to convert measured float to uint16_t)
-					PackPushData('A', SCALE_1, floatToUint16(lastFed_1));
+					PackPushData('A', SCALE_1, floatToUint16(lastFed_1));		// (Support Function)
 
 					// Set correction for next feeding
 					feedingCorrection_1 = feedingAmount_1 - lastFed_1;
@@ -554,7 +602,7 @@ void loop1() {
 					// Do Final Measurement and send data to Core 0
 					lastFed_2 = Pump_2.Measure(7);
 					// (Uses floatToUint16 to convert measured float to uint16_t)
-					PackPushData('A', SCALE_2, floatToUint16(lastFed_2));
+					PackPushData('A', SCALE_2, floatToUint16(lastFed_2));		// (Support Function)
 
 					// Set correction for next feeding
 					feedingCorrection_2 = feedingAmount_2 - lastFed_2;
@@ -573,11 +621,12 @@ void loop1() {
 					pump2Return = BUSY;
 
 					// Update Food Level
-					checkFillLevel_c1(floatToUint16(lastFed_1/100), floatToUint16(lastFed_2/100));
+					checkFillLevel_c1(floatToUint16(lastFed_1/100), floatToUint16(lastFed_2/100)); // (Support Function)
 					
 					// Check for warnings and errors
-					ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);
-					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+					ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);				// (Support Function)
+					ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);					// (Support Function)
+					ReceiveWarningsErrors_c1(Pump_2, MOTOR_2);					// (Support Function)
 
 					Mode_c1 = IDLE; // Back to IDLE
 				}
@@ -617,7 +666,7 @@ void loop1() {
 			calStatus = Pump_1.CalibrateScale(false);
 			// Send calibration updates to Core 0.
 			if (prevCalStatus != calStatus) {
-				PackPushData('C', 1, calStatus);
+				PackPushData('C', 1, calStatus);								// (Support Function)
 				prevCalStatus = calStatus;
 			}
 			// (No need to implement error handling here, as it should be user detecable.)
@@ -632,7 +681,7 @@ void loop1() {
 			calStatus = Pump_2.CalibrateScale(false);
 			// Send calibration updates to Core 0.
 			if (prevCalStatus != calStatus) {
-				PackPushData('C', 2, calStatus);
+				PackPushData('C', 2, calStatus);								// (Support Function)
 				prevCalStatus = calStatus;
 			}
 			// (No need to implement error handling here, as it should be user detecable.)
@@ -664,7 +713,7 @@ void loop1() {
 		// ===============================================================
 
 		// Turn on power
-		Power_c1(true);
+		Power_c1(true);												// (Support Function)	
 
 		// Autotune Stall
 		// (true/true for quick check and save to file)
@@ -672,20 +721,20 @@ void loop1() {
 		// Dumper Drive (Scales)
 		while (DumperDrive.HomeMotor() == BUSY);
 		DumperDrive.AutotuneStall(true, true);
-		ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);
+		ReceiveWarningsErrors_c1(DumperDrive, MOTOR_0);				// (Support Function)
 
 		// Pump 1
 		while (Pump_1.HomeMotor() == BUSY);
 		Pump_1.AutotuneStall(true, true);
-		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);
+		ReceiveWarningsErrors_c1(Pump_1, MOTOR_1);					// (Support Function)
 
 		// Pump 2
 		while (Pump_2.HomeMotor() == BUSY);
 		Pump_2.AutotuneStall(true, true);
-		ReceiveWarningsErrors_c1(Pump_2, MOTOR_2);
+		ReceiveWarningsErrors_c1(Pump_2, MOTOR_2);					// (Support Function)
 
 		// Turn off power
-		Power_c1(false);
+		Power_c1(false);											// (Support Function)
 
 
 		// Reboot PurrPleaser
@@ -715,7 +764,7 @@ void loop1() {
 		// ===============================================================
 
 		// Turn on power
-		Power_c1(true);
+		Power_c1(true);												// (Support Function)
 
 		// Emergency Move
 		DumperDrive.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
@@ -723,7 +772,7 @@ void loop1() {
 		Pump_2.EmergencyMove(EMGY_CURRENT, EMGY_CYCLES);
 
 		// Turn off power
-		Power_c1(false);
+		Power_c1(false);											// (Support Function)
 
 		// Reset Flags
 		dumperReturn = BUSY;
@@ -765,8 +814,8 @@ void exampleSerialInterface() {
 			DEBUG_DEBUG("Enter feeding amount: ");
 			while (Serial.available() == 0);
 			float feedingAmount = Serial.parseFloat();
-			PackPushData('F', SCALE_1, floatToUint16(feedingAmount));
-			PackPushData('F', SCALE_2, floatToUint16(feedingAmount));
+			PackPushData('F', SCALE_1, floatToUint16(feedingAmount));				// (Support Function)
+			PackPushData('F', SCALE_2, floatToUint16(feedingAmount));				// (Support Function)
 			break;
 		}
 		case 5: {
@@ -793,13 +842,13 @@ void exampleSerialInterface() {
 			break;
 		}
 		default: {
-			PackPushData(userInput);
+			PackPushData(userInput);											// (Support Function)
 			break;
 		}
 		}
 	}
 	else {
-		PopAndDebug_c0();
+		PopAndDebug_c0();		// (Support Function)
 	}
 	// -------------------------------------------------------------------------------------------------
 }

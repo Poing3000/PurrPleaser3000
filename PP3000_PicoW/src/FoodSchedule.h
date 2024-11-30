@@ -28,9 +28,12 @@ public:
 	// Public functions
 	void SetupFeedClock();													// Function to setup the feeding clock, RTC alarm and feeding schedule
 	void setFeedingAmounts(int index, byte amountCat1, byte amountCat2);	// Function to set the feeding amounts
+	void setFeedingAmounts(int index, byte amountCat1);						// Function to set the feeding amounts (overload 1x cat)
 	void setFeedingAmounts(byte amountCat1, byte amountCat2);				// Function to set the feeding amounts for all feeding times (overloaded function)
+	void setFeedingAmounts(byte amountCat1);								// Function to set the feeding amounts for all feeding times (overload 1x cat)
 	void setFeedingTime(int index, datetime_t feedingTime);					// Function to set the feeding time
 	void TimeToFeed(byte& amount1, byte& amount2);							// Function to check if it is time to feed, returns the amounts when it's time
+	void TimeToFeed(byte& amount1);											// TimeToFeed function overload for 1x cat
 	void setNextFeedingAlarm();												// Function to set the next feeding alarm
 	bool saveFeedingSchedule();												// Function to save the feeding schedule to NVM	
 

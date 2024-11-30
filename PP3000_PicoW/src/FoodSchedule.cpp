@@ -1,6 +1,6 @@
 /*
-* This is the libray Food Schedule (FS3000), which allows to provide set feeding amounts for two cats at four
-* different set times. The time is set from NTP and then used by the RP2040 build in RTC. Feeding events are
+* This is the libray Food Schedule (FS3000), which allows to provide set feeding amounts for one or two cats at
+* four different set times. The time is set from NTP and then used by the RP2040 build in RTC. Feeding events are
 * triggerd by the RTC alarm; hence they are self-contained and cannot be missed. As inputs, the library
 * requires the NTP server, the daylight saving time rule, and the standard time rule. Further it needs the
 * feeding times and amounts. NOTE: the schedule is global and can directly be accessed and modified
@@ -124,7 +124,7 @@ void FS3000::setFeedingTime(int index, datetime_t feedingTime) {
 }
 // --------------------------------------------------------------------------------------------------------------*
 
-// Function to set the feeding amounts
+// Function to set the feeding amounts (1 or 2 cats)
 // ---------------------------------------------------------------------------------------------------------------
 void FS3000::setFeedingAmounts(int index, byte amountCat1, byte amountCat2) {
     if (index >= 0 && index < 4) {
@@ -148,6 +148,23 @@ void FS3000::setFeedingAmounts(byte amountCat1, byte amountCat2) {
         byte extraCat2 = amountCat2 % 4; // Calculate remainder to distribute in the last feeding
         for (int i = 0; i < 4; ++i) {
             schedule.feedingAmounts[i][1] = baseAmountCat2 + (i == 3 ? extraCat2 : 0); // Add remainder to the last feeding
+        }
+    }
+}
+
+// Overload 1x cat:
+void FS3000::setFeedingAmounts(int index, byte amountCat1) {
+    if (index >= 0 && index < 4) {
+        schedule.feedingAmounts[index][0] = amountCat1;
+    }
+}
+
+void FS3000::setFeedingAmounts(byte amountCat1) {
+    if (amountCat1 > 0) {
+        byte baseAmountCat1 = amountCat1 / 4;
+        byte extraCat1 = amountCat1 % 4;
+        for (int i = 0; i < 4; ++i) {
+            schedule.feedingAmounts[i][0] = baseAmountCat1 + (i == 3 ? extraCat1 : 0);
         }
     }
 }
@@ -202,7 +219,7 @@ void FS3000::setNextFeedingAlarm() {
 }
 // --------------------------------------------------------------------------------------------------------------*
 
-// Function that checks if it is time to feed the cats
+// Function that checks if it is time to feed the cat(s)
 // ---------------------------------------------------------------------------------------------------------------
 // This function is to be called in the main loop. It checks if the alarm flag is set and if so, releases the feeding
 // amounts. Then it sets the next feeding alarm.
@@ -226,6 +243,19 @@ void FS3000::TimeToFeed(byte& amount1, byte& amount2) {
         amount2 = 0;
     }
 }
+
+// Overload 1x cat:
+void FS3000::TimeToFeed(byte& amount1) {
+    if (alarmFlag) {
+        alarmFlag = false;
+        amount1 = schedule.feedingAmounts[nextSchedule][0];
+        setNextFeedingAlarm();
+    }
+    else {
+        amount1 = 0;
+    }
+}
+
 // --------------------------------------------------------------------------------------------------------------*
 
 // Function to save the feeding schedule to NVM
@@ -239,7 +269,7 @@ void FS3000::TimeToFeed(byte& amount1, byte& amount2) {
 bool FS3000::saveFeedingSchedule() {
     // Check if file system is mounted
     if (!LittleFS.begin()) {
-        Serial.println("Error mounting file system");
+        //Serial.println("Error mounting file system");
         return false;
     }
 
@@ -252,7 +282,7 @@ bool FS3000::saveFeedingSchedule() {
         file.close();
     }
     else {
-        Serial.println("Error opening file for writing");
+        //Serial.println("Error opening file for writing");
         // Unmount the file system
         LittleFS.end();
         return false;
@@ -261,7 +291,7 @@ bool FS3000::saveFeedingSchedule() {
     // Unmount the file system
     LittleFS.end();
 
-    Serial.println("Feeding schedule saved");
+    //Serial.println("Feeding schedule saved");
     return true;
 }
 // --------------------------------------------------------------------------------------------------------------*
@@ -273,7 +303,7 @@ bool FS3000::loadFeedingSchedule() {
     // Check if file system is mounted
     if (!LittleFS.begin()) {
         // >> Possible future improvement: implement warning <<
-        Serial.println("Error mounting file system");
+        //Serial.println("Error mounting file system");
         return false;
     }
 
@@ -287,7 +317,7 @@ bool FS3000::loadFeedingSchedule() {
     }
     else {
         // >> Possible future improvement: implement warning <<
-        Serial.println("Warning, no file.");
+        //Serial.println("Warning, no file.");
 
         // Unmount the file system
         LittleFS.end();

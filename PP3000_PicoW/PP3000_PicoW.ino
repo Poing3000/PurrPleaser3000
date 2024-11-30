@@ -13,13 +13,13 @@
  * EXTERNAL DEPENDENCIES:
  * ---------------------------------------------------------------------------------------------------
  * Please install the following libraries via the Arduino Library Manager:
- *	NAME					LINK														VERSION TESTED
- *  TimeZone.h            - https://github.com/JChristensen/Timezone					1.2.4
+ *  NAME		  LINK								VERSION TESTED
+ *  TimeZone.h            - https://github.com/JChristensen/Timezone			1.2.4
  *  ArduinoHA.h           - https://github.com/dawidchyrzynski/arduino-home-assistant	2.1.0
- *  Arduino_DebugUtils.h  - https://github.com/arduino-libraries/Arduino_DebugUtils		1.4.0
- *  MCP23017.h            - https://github.com/wollewald/MCP23017_WE/tree/master		1.6.8
- *  TMCStepper.h          - https://github.com/teemuatlut/TMCStepper					0.7.3
- *	HX711.h               -	https://github.com/RobTillaart/HX711						0.5.2
+ *  Arduino_DebugUtils.h  - https://github.com/arduino-libraries/Arduino_DebugUtils	1.4.0
+ *  MCP23017.h            - https://github.com/wollewald/MCP23017_WE/tree/master	1.6.8
+ *  TMCStepper.h          - https://github.com/teemuatlut/TMCStepper			0.7.3
+ *  HX711.h               - https://github.com/RobTillaart/HX711			0.5.2
  * ---------------------------------------------------------------------------------------------------
  * 
  */

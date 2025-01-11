@@ -748,9 +748,9 @@ void checkFillLevel_c1(uint16_t lastAmount1, uint16_t lastAmount2) {
 // ELSE 1x CAT ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 void checkFillLevel_c1(uint16_t lastAmount1) {
 
-	static bool lowLevel = false;
-	static bool lastState = false;
-	static uint16_t feedingSinceTop = HIGH_CAP;
+	static bool lowLevel = false;					// Low level warning
+	static bool lastState = false;					// Last state of the top sensor
+	static uint16_t feedingSinceTop = HIGH_CAP;		// Feeding since full (assume ~empty at start)
 
 	// Side Fill Sensor
 	// ========================================================================================
@@ -774,7 +774,7 @@ void checkFillLevel_c1(uint16_t lastAmount1) {
 	// (when available). When the top sensor reads full, then the max. remaining feedeings are
 	// approximated with the HIGH_CAP value (e.g. capacity = 1000g, daily feeding = 100g, then
 	// ">10" days are left). When the top sensor switches from full to not full, then remaining
-	// feedinngs are estimated by subtracting the current weight from the HIGH_CAP value. Then,
+	// feedings are estimated by subtracting the current weight from the HIGH_CAP value. Then,
 	// if this substraction shows 0, the the remaining feedings will show the min. value,
 	// calculated with the LOW_CAP figure (e.g. "<1 day" left). This is a very rough estimation
 	// and should be used with caution. Note, sensor signals are inverted.

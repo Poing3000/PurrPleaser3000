@@ -4,10 +4,9 @@
  * Status:	Beta
  *
  * Description:
- * This code is for the cat food pump, also called Futterpumpe or FoodPump3000.
+ * This code is for the cat FoodPump3000.
  * It is ment to be a libary used for Arduino compatible microcontrollers.
- * Note, this code considers the "Pump" only, for the Scale please find the FoodScale3000 libary.
- * Also note that all motors (Driver: <TMCStepper.h> and Stepper: <SpeedyStepper4Purr.h>) setting need to be
+ * Note that all motors (Driver: <TMCStepper.h> and Stepper: <SpeedyStepper4Purr.h>) setting need to be
  * defined in the main sketch (.ino), this libary only controls the pump.
  * Further info at: https://github.com/Poing3000/FoodPump3000
  *

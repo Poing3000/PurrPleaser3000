@@ -43,7 +43,7 @@ public:
 	byte CalibrateScale(bool serialResult);
 	void EmergencyMove(uint16_t eCurrent, byte eCycles);
 
-	//TESTING - DELETE LATER
+	// TESTING - for debugging etc.
 	void MotorTest(bool moveUP);
 	byte Test_Connection();
 
